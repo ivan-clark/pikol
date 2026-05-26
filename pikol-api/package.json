@@ -3,12 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
-    "start": "node dist/main.js",
-    "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts"
+    "build": "nest build",
+    "db:migrate": "prisma migrate deploy",
+    "postinstall": "prisma generate",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug",
+    "start:prod": "node dist/main.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
