@@ -113,6 +113,22 @@ export class RecordGameDto {
   scoringEvents!: ScoringEventDto[];
 }
 
+export class AssignCourtsDto {
+  @ApiProperty({ example: [1, 2, 3, 4, 5, 6, 7, 8], type: [Number] })
+  playerIds!: number[];
+
+  @ApiProperty({ example: 2 })
+  courts!: number;
+}
+
+export class AssignCourtsResultDto {
+  @ApiProperty({ type: [MatchDto] })
+  courts!: MatchDto[];
+
+  @ApiProperty({ type: [PlayerDto] })
+  waiting!: PlayerDto[];
+}
+
 export class HealthDto {
   @ApiProperty({ example: true })
   ok!: boolean;

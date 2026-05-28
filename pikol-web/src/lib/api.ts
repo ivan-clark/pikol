@@ -73,4 +73,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  assignCourts: (playerIds: number[], courts: number) =>
+    request<{ courts: Match[]; waiting: Player[] }>('/open-play/assign', {
+      method: 'POST',
+      body: JSON.stringify({ playerIds, courts }),
+    }),
 };

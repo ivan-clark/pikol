@@ -58,24 +58,21 @@ function getPairPlayCount(history: GameHistoryItem[], players: Player[]) {
   return history.filter((game) => getPairKey(game.teamA) === pairKey || getPairKey(game.teamB) === pairKey).length;
 }
 
-export function pickMatch(players: Player[], history: GameHistoryItem[]): Match | null {
-  if (players.length < 4) return null;
-
-  const selectedPlayers = shufflePlayers(players)
-    .sort((a, b) => a.games - b.games)
-    .slice(0, 4);
+// From four players, choose the 2v2 split that least repeats past partnerships
+// and keeps the two teams closest in average MMR.
+function bestPairing(four: Player[], history: GameHistoryItem[]): Match {
   const pairings: [Player[], Player[]][] = [
     [
-      [selectedPlayers[0], selectedPlayers[1]],
-      [selectedPlayers[2], selectedPlayers[3]],
+      [four[0], four[1]],
+      [four[2], four[3]],
     ],
     [
-      [selectedPlayers[0], selectedPlayers[2]],
-      [selectedPlayers[1], selectedPlayers[3]],
+      [four[0], four[2]],
+      [four[1], four[3]],
     ],
     [
-      [selectedPlayers[0], selectedPlayers[3]],
-      [selectedPlayers[1], selectedPlayers[2]],
+      [four[0], four[3]],
+      [four[1], four[2]],
     ],
   ];
 
@@ -91,6 +88,35 @@ export function pickMatch(players: Player[], history: GameHistoryItem[]): Match 
   })[0];
 
   return { teamA, teamB };
+}
+
+export function pickMatch(players: Player[], history: GameHistoryItem[]): Match | null {
+  if (players.length < 4) return null;
+
+  const selectedPlayers = shufflePlayers(players)
+    .sort((a, b) => a.games - b.games)
+    .slice(0, 4);
+
+  return bestPairing(selectedPlayers, history);
+}
+
+// Open play: fill up to `courtCount` courts by pulling players off the front of an
+// already-ordered queue (longest-waiting first), balancing each court's 2v2 split.
+// Returns the matches placed on courts plus whoever is still waiting.
+export function assignCourts(
+  orderedPlayers: Player[],
+  history: GameHistoryItem[],
+  courtCount: number,
+): { courts: Match[]; waiting: Player[] } {
+  const courts: Match[] = [];
+  let cursor = 0;
+
+  while (courts.length < courtCount && orderedPlayers.length - cursor >= 4) {
+    courts.push(bestPairing(orderedPlayers.slice(cursor, cursor + 4), history));
+    cursor += 4;
+  }
+
+  return { courts, waiting: orderedPlayers.slice(cursor) };
 }
 
 export function applyMatchResult(players: Player[], match: Match, winner: TeamName) {

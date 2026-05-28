@@ -1,7 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BarChart3, History, Trophy, Users } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  Clock,
+  Crown,
+  Flame,
+  History,
+  Hourglass,
+  LayoutGrid,
+  Moon,
+  Rewind,
+  Sun,
+  Target,
+  TrendingUp,
+  Trophy,
+  Users,
+  Zap,
+} from 'lucide-react';
 
+import { Avatar } from './components/Avatar';
+import { OpenPlayPage } from './components/OpenPlayPage';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
@@ -28,7 +47,7 @@ import {
 import { cn } from './lib/utils';
 import type { GameHistoryItem, Match, Player, Score, ScoringEvent, TeamName } from './lib/types';
 
-type Page = 'game' | 'players' | 'history' | 'insights';
+type Page = 'game' | 'openplay' | 'players' | 'history' | 'insights';
 type HistoryView = 'games' | 'pairs' | 'players';
 type DialogState = 'record' | 'discard' | null;
 type PendingAction = 'add-player' | 'reset' | 'pick-teams' | 'record-match' | `availability-${number}` | null;
@@ -54,6 +73,9 @@ export default function App() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [historyView, setHistoryView] = useState<HistoryView>('games');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+  );
 
   const winner = getWinner(score);
   const matchPoint = getMatchPoint(score);
@@ -68,6 +90,18 @@ export default function App() {
   useEffect(() => {
     void loadInitialData();
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0f131a' : '#f7f8fb');
+    try {
+      localStorage.setItem('pikol-theme', theme);
+    } catch {
+      // ignore unavailable storage (e.g. private mode)
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (!startedAt) return;
@@ -293,8 +327,39 @@ export default function App() {
     resetCurrentGame();
   }
 
+  function handleOpenPlayResult(updatedPlayers: Player[], game: GameHistoryItem) {
+    setPlayers(updatedPlayers);
+    setHistory((current) => [game, ...current]);
+  }
+
   return (
     <div className="min-h-screen pb-24">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <img src="/pickleball.png" alt="" className="h-8 w-8 rounded-lg" />
+            <div className="leading-tight">
+              <p className="text-base font-extrabold tracking-tight">Pikol</p>
+              <p className="text-xs text-muted-foreground">2v2 open play</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold capitalize text-muted-foreground">
+              {page}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="grid h-9 w-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
+        </div>
+      </header>
+
       <main className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-5">
         {apiError && (
           <Card className="border-destructive p-4">
@@ -328,6 +393,7 @@ export default function App() {
             winner={winner}
           />
         )}
+        {page === 'openplay' && <OpenPlayPage players={players} onResult={handleOpenPlayResult} />}
         {page === 'players' && (
           <PlayersPage
             newPlayerName={newPlayerName}
@@ -357,9 +423,10 @@ export default function App() {
         {page === 'insights' && <InsightsPage history={history} pairStats={pairStats} players={rankedPlayers} streaks={streaks} />}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto grid max-w-2xl grid-cols-4 gap-1 p-2">
+      <nav className="fixed inset-x-0 bottom-0 border-t border-border bg-card/95 backdrop-blur">
+        <div className="mx-auto grid max-w-2xl grid-cols-5 gap-1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <NavButton active={page === 'game'} icon={<Trophy size={20} />} label="Game" onClick={() => setPage('game')} />
+          <NavButton active={page === 'openplay'} icon={<LayoutGrid size={20} />} label="Open Play" onClick={() => setPage('openplay')} />
           <NavButton active={page === 'players'} icon={<Users size={20} />} label="Players" onClick={() => setPage('players')} />
           <NavButton active={page === 'history'} icon={<History size={20} />} label="History" onClick={() => setPage('history')} />
           <NavButton active={page === 'insights'} icon={<BarChart3 size={20} />} label="Insights" onClick={() => setPage('insights')} />
@@ -687,10 +754,13 @@ function HistoryPage({
     <>
       <PageHeader title="History" description="Review games, player records, and pair performance." />
 
-      <div className="grid grid-cols-3 gap-1 rounded-lg bg-card p-1">
+      <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-muted p-1">
         {(['games', 'pairs', 'players'] as const).map((view) => (
           <button
-            className={cn('min-h-10 rounded-md text-sm font-semibold capitalize', historyView === view && 'bg-muted')}
+            className={cn(
+              'min-h-10 rounded-md text-sm font-semibold capitalize text-muted-foreground transition-colors',
+              historyView === view && 'bg-card text-foreground shadow-sm',
+            )}
             key={view}
             onClick={() => onViewChange(view)}
             type="button"
@@ -710,14 +780,51 @@ function HistoryPage({
       {historyView === 'pairs' &&
         (pairStats.length > 0 ? (
           <Panel>
-            {pairStats.map((pair) => (
-              <SummaryRow
-                detail={`${pair.wins}W / ${pair.games - pair.wins}L / ${pair.games}G together`}
-                key={pair.key}
-                label={pair.names}
-                value={`${winRate(pair.wins, pair.games)}%`}
-              />
-            ))}
+            <div>
+              <h2 className="text-lg font-semibold">Pair performance</h2>
+              <p className="text-sm text-muted-foreground">Pairs ranked by their win rate together.</p>
+            </div>
+            <div className="flex flex-col">
+              {pairStats.map((pair, index) => {
+                const [name1 = '?', name2 = '?'] = pair.names.split(' / ');
+                const rate = winRate(pair.wins, pair.games);
+                return (
+                  <div
+                    key={pair.key}
+                    className={cn(
+                      'flex items-center gap-3 py-2.5',
+                      index !== pairStats.length - 1 && 'border-b border-border/60',
+                    )}
+                  >
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                      {index + 1}
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <Avatar name={name1} size={28} />
+                      <Avatar name={name2} size={28} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">{pair.names}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {pair.wins}W · {pair.games - pair.wins}L · {pair.games}G together
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p
+                        className={cn(
+                          'text-2xl font-black tabular-nums leading-none',
+                          rate >= 60 && 'text-success',
+                          rate < 40 && pair.games >= 3 && 'text-destructive',
+                        )}
+                      >
+                        {rate}%
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">win rate</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </Panel>
         ) : (
           <EmptyCard text="Pair history appears after games are recorded." />
@@ -726,30 +833,41 @@ function HistoryPage({
       {historyView === 'players' &&
         (players.length > 0 ? (
           <>
-            <Panel className="flex-row flex-wrap">
-              {players.map((player) => (
-                <Button
-                  key={player.id}
-                  onClick={() => onSelectPlayer(player.id)}
-                  variant={selectedPlayerId === player.id ? 'default' : 'ghost'}
-                >
-                  {player.name}
-                </Button>
-              ))}
+            <Panel>
+              <div>
+                <h2 className="text-lg font-semibold">Player history</h2>
+                <p className="text-sm text-muted-foreground">Pick a player to see their chronological games.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {players.map((player) => {
+                  const selected = selectedPlayerId === player.id;
+                  return (
+                    <button
+                      key={player.id}
+                      type="button"
+                      onClick={() => onSelectPlayer(player.id)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-full border pl-1 pr-3 py-1 text-sm font-medium transition-colors',
+                        selected
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-card hover:bg-muted',
+                      )}
+                    >
+                      <Avatar name={player.name} size={24} />
+                      <span>{player.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </Panel>
 
-            <Panel>
-              <h2 className="text-2xl font-semibold tracking-normal">
-                {players.find((player) => player.id === selectedPlayerId)?.name ?? 'Select a player'}
-              </h2>
-              {selectedPlayerId === null && <p className="text-sm text-muted-foreground">Select a player to see their chronological games.</p>}
-              {selectedPlayerId !== null && selectedPlayerGames.length === 0 && (
-                <p className="text-sm text-muted-foreground">No games for this player yet.</p>
-              )}
-              {selectedPlayerGames.map((game) => (
-                <PlayerTimelineRow game={game} key={game.id} playerId={selectedPlayerId ?? 0} />
-              ))}
-            </Panel>
+            {selectedPlayerId !== null && (
+              <PlayerTimelinePanel
+                player={players.find((player) => player.id === selectedPlayerId) ?? null}
+                playerId={selectedPlayerId}
+                games={selectedPlayerGames}
+              />
+            )}
           </>
         ) : (
           <EmptyCard text="Player history appears after games are recorded." />
@@ -769,179 +887,579 @@ function InsightsPage({
   players: Player[];
   streaks: ReturnType<typeof longestWinStreaks>;
 }) {
-  const bestWinRatePlayers = [...players]
-    .filter((player) => player.games > 0)
-    .sort((a, b) => winRate(b.wins, b.games) - winRate(a.wins, a.games) || b.wins - a.wins || b.games - a.games)
-    .slice(0, 3);
+  const activePlayers = players.filter((player) => player.games > 0);
+
+  // ── Top-of-page stat tiles
+  const totalGames = history.length;
+  const activeCount = activePlayers.length;
+  const totalSeconds = history.reduce((sum, game) => sum + game.durationSeconds, 0);
+  const avgSeconds = totalGames > 0 ? Math.round(totalSeconds / totalGames) : 0;
+
+  // ── Leaderboards (parent already passes players sorted by MMR desc)
+  const topMmr = activePlayers.slice(0, 5);
+  const winRateLeaders = [...activePlayers]
+    .filter((player) => player.games >= 3)
+    .sort(
+      (a, b) =>
+        winRate(b.wins, b.games) - winRate(a.wins, a.games) || b.wins - a.wins || b.games - a.games,
+    )
+    .slice(0, 5);
+  const mostActive = [...activePlayers].sort((a, b) => b.games - a.games).slice(0, 5);
+  const topPairs = pairStats.slice(0, 5);
+
+  // ── Bar scaling: keep bars visible across narrow ranges by lifting the floor.
+  const mmrMin = topMmr.length ? Math.min(...topMmr.map((p) => p.mmr)) : 0;
+  const mmrMax = topMmr.length ? Math.max(...topMmr.map((p) => p.mmr)) : 1;
+  const mmrRange = mmrMax - mmrMin || 1;
+  const scaleMmr = (mmr: number) => 30 + 70 * ((mmr - mmrMin) / mmrRange);
+  const topActiveGames = mostActive[0]?.games ?? 1;
+  const topStreak = streaks[0]?.wins ?? 1;
+
+  // ── Game highlights
   const closest = closestGame(history);
   const longest = longestGame(history);
   const comeback = bestComeback(history);
   const lead = biggestLead(history);
   const upset = biggestUpset(history);
+  const upsetMmrDiff = upset ? Math.round(underdogMargin(upset)) : 0;
 
   return (
     <>
-      <PageHeader title="Insights" description="Quick reads from player ratings and recorded game history." />
+      <PageHeader title="Insights" description="Leaderboards, analytics, and standout moments from your games." />
 
-      <InsightPanel title="Top MMR">
-        {players.slice(0, 3).map((player, index) => (
-          <SummaryRow key={player.id} label={`${index + 1}. ${player.name}`} value={`${player.mmr} MMR`} detail={`${player.wins}W / ${player.games}G`} />
-        ))}
-      </InsightPanel>
+      {/* Hero stat strip */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatTile icon={<Trophy size={12} />} label="Games" value={totalGames} />
+        <StatTile icon={<Users size={12} />} label="Players" value={activeCount} />
+        <StatTile icon={<Clock size={12} />} label="Court time" value={formatHoursMinutes(totalSeconds)} />
+        <StatTile
+          icon={<Activity size={12} />}
+          label="Avg game"
+          value={totalGames > 0 ? formatDuration(avgSeconds) : '—'}
+        />
+      </div>
 
-      <InsightPanel title="Best Win Rate">
-        {bestWinRatePlayers.length > 0 ? (
-          bestWinRatePlayers.map((player) => (
-            <SummaryRow key={player.id} label={player.name} value={`${winRate(player.wins, player.games)}%`} detail={`${player.wins}W / ${player.games}G`} />
-          ))
-        ) : (
-          <EmptyText>Record matches to calculate win rates.</EmptyText>
-        )}
-      </InsightPanel>
+      {/* Leaderboards (2×2 on wide screens) */}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <LeaderPanel title="Top MMR" subtitle="Highest rated players" icon={<Crown size={14} />}>
+          {topMmr.length > 0 ? (
+            topMmr.map((player, index) => (
+              <LeaderRow
+                key={player.id}
+                rank={index + 1}
+                name={player.name}
+                subtitle={`${player.wins}W · ${player.games}G · ${winRate(player.wins, player.games)}% win rate`}
+                value={`${player.mmr}`}
+                barPercent={scaleMmr(player.mmr)}
+              />
+            ))
+          ) : (
+            <EmptyRow>Record games to see MMR rankings.</EmptyRow>
+          )}
+        </LeaderPanel>
 
-      <InsightPanel title="Best Pairings">
-        {pairStats.length > 0 ? (
-          pairStats.slice(0, 3).map((pair) => (
-            <SummaryRow key={pair.key} label={pair.names} value={`${winRate(pair.wins, pair.games)}%`} detail={`${pair.wins}W / ${pair.games}G together`} />
-          ))
-        ) : (
-          <EmptyText>Team records appear after games are recorded.</EmptyText>
-        )}
-      </InsightPanel>
+        <LeaderPanel title="Best Win Rate" subtitle="3+ games played" icon={<Target size={14} />}>
+          {winRateLeaders.length > 0 ? (
+            winRateLeaders.map((player, index) => {
+              const rate = winRate(player.wins, player.games);
+              return (
+                <LeaderRow
+                  key={player.id}
+                  rank={index + 1}
+                  name={player.name}
+                  subtitle={`${player.wins}W · ${player.games - player.wins}L · ${player.games}G`}
+                  value={`${rate}%`}
+                  barPercent={rate}
+                  barClass={rate >= 60 ? 'bg-success' : 'bg-primary'}
+                />
+              );
+            })
+          ) : (
+            <EmptyRow>Play at least 3 games to qualify.</EmptyRow>
+          )}
+        </LeaderPanel>
 
-      <InsightPanel title="Most Active">
-        {players.slice().sort((a, b) => b.games - a.games).slice(0, 3).map((player) => (
-          <SummaryRow key={player.id} label={player.name} value={`${player.games} games`} detail={`${player.wins} wins`} />
-        ))}
-      </InsightPanel>
+        <LeaderPanel title="Most Active" subtitle="Games played" icon={<Flame size={14} />}>
+          {mostActive.length > 0 ? (
+            mostActive.map((player, index) => (
+              <LeaderRow
+                key={player.id}
+                rank={index + 1}
+                name={player.name}
+                subtitle={`${player.wins}W · ${winRate(player.wins, player.games)}% win rate`}
+                value={`${player.games}`}
+                barPercent={(player.games / topActiveGames) * 100}
+              />
+            ))
+          ) : (
+            <EmptyRow>No games recorded yet.</EmptyRow>
+          )}
+        </LeaderPanel>
 
-      <InsightPanel title="Longest Win Streak">
+        <LeaderPanel title="Best Pairings" subtitle="Top win % together" icon={<Users size={14} />}>
+          {topPairs.length > 0 ? (
+            topPairs.map((pair, index) => {
+              const [name1 = '?', name2 = '?'] = pair.names.split(' / ');
+              const rate = winRate(pair.wins, pair.games);
+              return (
+                <PairRow
+                  key={pair.key}
+                  rank={index + 1}
+                  name1={name1}
+                  name2={name2}
+                  subtitle={`${pair.wins}W · ${pair.games - pair.wins}L · ${pair.games}G together`}
+                  value={`${rate}%`}
+                  barPercent={rate}
+                  barClass={rate >= 60 ? 'bg-success' : 'bg-primary'}
+                />
+              );
+            })
+          ) : (
+            <EmptyRow>Pair stats appear after games are recorded.</EmptyRow>
+          )}
+        </LeaderPanel>
+      </div>
+
+      {/* Win streaks — own full-width panel for emphasis */}
+      <LeaderPanel title="Longest Win Streaks" subtitle="Consecutive wins" icon={<Zap size={14} />}>
         {streaks.length > 0 ? (
-          streaks.slice(0, 3).map((streak) => <SummaryRow key={streak.id} label={streak.name} value={`${streak.wins}W`} detail="Best recorded streak" />)
+          streaks.slice(0, 5).map((streak, index) => (
+            <LeaderRow
+              key={streak.id}
+              rank={index + 1}
+              name={streak.name}
+              subtitle="Best recorded streak"
+              value={`${streak.wins}W`}
+              barPercent={(streak.wins / topStreak) * 100}
+              barClass="bg-warning"
+            />
+          ))
         ) : (
-          <EmptyText>Win streaks appear after games are recorded.</EmptyText>
+          <EmptyRow>Win streaks appear after games are recorded.</EmptyRow>
         )}
-      </InsightPanel>
+      </LeaderPanel>
 
-      <InsightPanel title="Closest Game">
-        {closest ? (
-          <SummaryRow label={gameLabel(closest)} value={gameScore(closest)} detail={`${closest.winner} won by ${Math.abs(closest.score.teamA - closest.score.teamB)}`} />
-        ) : (
-          <EmptyText>No completed games yet.</EmptyText>
-        )}
-      </InsightPanel>
-
-      <InsightPanel title="Longest Game">
-        {longest ? (
-          <SummaryRow label={gameLabel(longest)} value={formatDuration(longest.durationSeconds)} detail={`${longest.winner} won ${gameScore(longest)}`} />
-        ) : (
-          <EmptyText>No completed games yet.</EmptyText>
-        )}
-      </InsightPanel>
-
-      <InsightPanel title="Best Comeback">
-        {comeback ? (
-          <SummaryRow label={gameLabel(comeback.game)} value={`${comeback.deficit} pts`} detail={`${comeback.game.winner} came back to win ${gameScore(comeback.game)}`} />
-        ) : (
-          <EmptyText>Comebacks appear when a team wins after trailing during the game.</EmptyText>
-        )}
-      </InsightPanel>
-
-      <InsightPanel title="Biggest Lead">
-        {lead ? (
-          <SummaryRow label={gameLabel(lead.game)} value={`${lead.lead} pts`} detail={`Final ${gameScore(lead.game)}`} />
-        ) : (
-          <EmptyText>Biggest leads appear after point-by-point games are recorded.</EmptyText>
-        )}
-      </InsightPanel>
-
-      <InsightPanel title="Biggest Upset">
-        {upset && underdogMargin(upset) > 0 ? (
-          <SummaryRow label={gameLabel(upset)} value={`${Math.round(underdogMargin(upset))} MMR`} detail={`${upset.winner} beat the higher-rated team`} />
-        ) : (
-          <EmptyText>Upsets appear when a lower-MMR team wins.</EmptyText>
-        )}
-      </InsightPanel>
+      {/* Game highlights */}
+      <div className="flex flex-col gap-2">
+        <div>
+          <h2 className="text-lg font-semibold">Game highlights</h2>
+          <p className="text-sm text-muted-foreground">Notable moments from your recorded games.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <HighlightCard
+            icon={<Target size={14} />}
+            tone="primary"
+            label="Closest game"
+            value={closest ? `${Math.abs(closest.score.teamA - closest.score.teamB)} pt margin` : null}
+            game={closest ? gameLabel(closest) : null}
+            detail={closest ? `${closest.winner} won ${gameScore(closest)}` : null}
+            empty="No completed games yet."
+          />
+          <HighlightCard
+            icon={<Hourglass size={14} />}
+            tone="warning"
+            label="Longest game"
+            value={longest ? formatDuration(longest.durationSeconds) : null}
+            game={longest ? gameLabel(longest) : null}
+            detail={longest ? `${longest.winner} won ${gameScore(longest)}` : null}
+            empty="No completed games yet."
+          />
+          <HighlightCard
+            icon={<Rewind size={14} />}
+            tone="success"
+            label="Best comeback"
+            value={comeback ? `${comeback.deficit} pt deficit` : null}
+            game={comeback ? gameLabel(comeback.game) : null}
+            detail={comeback ? `${comeback.game.winner} came back to win ${gameScore(comeback.game)}` : null}
+            empty="Comebacks appear when a team wins after trailing."
+          />
+          <HighlightCard
+            icon={<TrendingUp size={14} />}
+            tone="primary"
+            label="Biggest lead"
+            value={lead ? `${lead.lead} pt lead` : null}
+            game={lead ? gameLabel(lead.game) : null}
+            detail={lead ? `Final ${gameScore(lead.game)}` : null}
+            empty="Biggest leads appear after point-by-point games."
+          />
+          <HighlightCard
+            icon={<Zap size={14} />}
+            tone="destructive"
+            label="Biggest upset"
+            value={upset && upsetMmrDiff > 0 ? `${upsetMmrDiff} MMR diff` : null}
+            game={upset && upsetMmrDiff > 0 ? gameLabel(upset) : null}
+            detail={upset && upsetMmrDiff > 0 ? `${upset.winner} beat the higher-rated team` : null}
+            empty="Upsets appear when a lower-MMR team wins."
+          />
+        </div>
+      </div>
     </>
   );
 }
 
-function GameHistoryCard({ game, index }: { game: GameHistoryItem; index: number }) {
+function StatTile({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
-    <Panel>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">Game #{index}</p>
-          <p className="text-sm text-muted-foreground">{formatPlayedDate(game.playedAt)}</p>
-          <p className="text-sm text-muted-foreground">
-            {formatPlayedTime(game.playedAt)} - {formatDuration(game.durationSeconds)}
-          </p>
-        </div>
-        <Badge variant="success">{game.winner}</Badge>
+    <Card className="flex flex-col gap-2 p-4">
+      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+        <span className="grid h-5 w-5 place-items-center rounded-md bg-primary/20 text-primary">{icon}</span>
+        {label}
       </div>
-      <div className="grid gap-2 md:grid-cols-2">
-        <TeamSummary title="Team A" players={game.teamA} score={game.score.teamA} />
-        <TeamSummary title="Team B" players={game.teamB} score={game.score.teamB} />
-      </div>
-    </Panel>
+      <p className="text-2xl font-extrabold leading-none tabular-nums">{value}</p>
+    </Card>
   );
 }
 
-function TeamSummary({ players, score, title }: { players: GameHistoryItem['teamA']; score: number; title: string }) {
+function LeaderPanel({
+  title,
+  subtitle,
+  icon,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="space-y-1 rounded-md bg-background p-3">
-      <p className="text-sm text-muted-foreground">{title}</p>
-      <p className="text-4xl font-bold leading-none">{score}</p>
-      <p>{players.map((player) => `${player.name} (${player.mmr})`).join(' / ')}</p>
+    <Card className="flex flex-col gap-4 p-4">
+      <div className="flex items-center gap-2">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/20 text-primary">{icon}</span>
+        <div>
+          <h2 className="text-base font-semibold leading-tight">{title}</h2>
+          <p className="text-xs leading-tight text-muted-foreground">{subtitle}</p>
+        </div>
+      </div>
+      <div className="flex flex-col gap-3">{children}</div>
+    </Card>
+  );
+}
+
+function LeaderRow({
+  rank,
+  name,
+  subtitle,
+  value,
+  barPercent,
+  barClass = 'bg-primary',
+}: {
+  rank: number;
+  name: string;
+  subtitle: string;
+  value: string;
+  barPercent: number;
+  barClass?: string;
+}) {
+  const safe = Math.max(0, Math.min(100, barPercent));
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={cn(
+          'grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold tabular-nums',
+          rank === 1 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+        )}
+      >
+        {rank}
+      </span>
+      <Avatar name={name} size={32} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="truncate text-sm font-semibold">{name}</p>
+          <span className="text-sm font-bold tabular-nums">{value}</span>
+        </div>
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn('h-full rounded-full transition-all duration-500 ease-out', barClass)}
+            style={{ width: `${safe}%` }}
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p>
+      </div>
     </div>
   );
 }
 
-function PlayerTimelineRow({ game, playerId }: { game: GameHistoryItem; playerId: number }) {
+function PairRow({
+  rank,
+  name1,
+  name2,
+  subtitle,
+  value,
+  barPercent,
+  barClass = 'bg-primary',
+}: {
+  rank: number;
+  name1: string;
+  name2: string;
+  subtitle: string;
+  value: string;
+  barPercent: number;
+  barClass?: string;
+}) {
+  const safe = Math.max(0, Math.min(100, barPercent));
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={cn(
+          'grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold tabular-nums',
+          rank === 1 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+        )}
+      >
+        {rank}
+      </span>
+      <div className="flex shrink-0 gap-1">
+        <Avatar name={name1} size={28} />
+        <Avatar name={name2} size={28} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="truncate text-sm font-semibold">
+            {name1} & {name2}
+          </p>
+          <span className="text-sm font-bold tabular-nums">{value}</span>
+        </div>
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn('h-full rounded-full transition-all duration-500 ease-out', barClass)}
+            style={{ width: `${safe}%` }}
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function HighlightCard({
+  icon,
+  tone,
+  label,
+  value,
+  game,
+  detail,
+  empty,
+}: {
+  icon: ReactNode;
+  tone: 'primary' | 'success' | 'warning' | 'destructive';
+  label: string;
+  value: string | null;
+  game: string | null;
+  detail: string | null;
+  empty: string;
+}) {
+  const borderTone = {
+    primary: 'border-l-primary',
+    success: 'border-l-success',
+    warning: 'border-l-warning',
+    destructive: 'border-l-destructive',
+  }[tone];
+  const iconTone = {
+    primary: 'bg-primary/20 text-primary',
+    success: 'bg-success/20 text-success',
+    warning: 'bg-warning/20 text-warning',
+    destructive: 'bg-destructive/20 text-destructive',
+  }[tone];
+
+  return (
+    <Card className={cn('flex flex-col gap-2 border-l-4 p-4', borderTone, !value && 'opacity-60')}>
+      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+        <span className={cn('grid h-5 w-5 place-items-center rounded-md', iconTone)}>{icon}</span>
+        {label}
+      </div>
+      {value ? (
+        <>
+          <p className="text-2xl font-extrabold leading-tight tabular-nums">{value}</p>
+          {game && <p className="truncate text-sm font-semibold">{game}</p>}
+          {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      )}
+    </Card>
+  );
+}
+
+function EmptyRow({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>;
+}
+
+function formatHoursMinutes(totalSeconds: number) {
+  const minutes = Math.max(0, Math.floor(totalSeconds / 60));
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function GameHistoryCard({ game, index }: { game: GameHistoryItem; index: number }) {
+  return (
+    <Card className="flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-foreground">#{index}</span>
+          <span>{formatPlayedDate(game.playedAt)}</span>
+          <span className="opacity-50">·</span>
+          <span>{formatPlayedTime(game.playedAt)}</span>
+          <span className="opacity-50">·</span>
+          <span className="font-mono text-xs tabular-nums">{formatDuration(game.durationSeconds)}</span>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-success/20 px-2.5 py-0.5 text-xs font-semibold text-success">
+          <Crown size={12} />
+          {game.winner} wins
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2">
+        <HistoryTeamSide
+          team="Team A"
+          players={game.teamA}
+          score={game.score.teamA}
+          isWinner={game.winner === 'Team A'}
+        />
+        <div className="-mx-px border-l border-dashed border-border" />
+        <HistoryTeamSide
+          team="Team B"
+          players={game.teamB}
+          score={game.score.teamB}
+          isWinner={game.winner === 'Team B'}
+          rightSide
+        />
+      </div>
+    </Card>
+  );
+}
+
+function HistoryTeamSide({
+  team,
+  players,
+  score,
+  isWinner,
+  rightSide,
+}: {
+  team: string;
+  players: GameHistoryItem['teamA'];
+  score: number;
+  isWinner: boolean;
+  rightSide?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-2 rounded-md p-3',
+        rightSide ? 'pl-4' : 'pr-4',
+        isWinner && 'bg-success/10',
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{team}</span>
+        {isWinner && <Crown size={14} className="text-success" />}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {players.map((player) => (
+          <div key={player.id} className="flex items-center gap-2">
+            <Avatar name={player.name} size={24} />
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{player.name}</span>
+            <span className="text-xs tabular-nums text-muted-foreground">{player.mmr}</span>
+          </div>
+        ))}
+      </div>
+      <span
+        className={cn(
+          'text-3xl font-black tabular-nums leading-none',
+          isWinner ? 'text-success' : 'text-foreground',
+        )}
+      >
+        {score}
+      </span>
+    </div>
+  );
+}
+
+function PlayerTimelinePanel({
+  player,
+  playerId,
+  games,
+}: {
+  player: Player | null;
+  playerId: number;
+  games: GameHistoryItem[];
+}) {
+  const wins = games.filter((game) => {
+    const winningTeam = game.winner === 'Team A' ? game.teamA : game.teamB;
+    return winningTeam.some((member) => member.id === playerId);
+  }).length;
+  const total = games.length;
+
+  return (
+    <Panel>
+      <div className="flex items-center gap-3">
+        <Avatar name={player?.name ?? '?'} size={40} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-bold">{player?.name ?? 'Unknown player'}</p>
+          <p className="text-sm text-muted-foreground">
+            {total > 0
+              ? `${wins}W · ${total - wins}L · ${total}G · ${winRate(wins, total)}% win rate`
+              : 'No recorded games yet.'}
+          </p>
+        </div>
+      </div>
+      {games.length > 0 && (
+        <div className="flex flex-col">
+          {games.map((game, index) => (
+            <PlayerTimelineRow
+              key={game.id}
+              game={game}
+              playerId={playerId}
+              divider={index !== games.length - 1}
+            />
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function PlayerTimelineRow({
+  game,
+  playerId,
+  divider,
+}: {
+  game: GameHistoryItem;
+  playerId: number;
+  divider?: boolean;
+}) {
   const winningTeam = game.winner === 'Team A' ? game.teamA : game.teamB;
   const won = winningTeam.some((player) => player.id === playerId);
 
   return (
-    <div className="flex min-h-14 items-center justify-between gap-3 rounded-md bg-background px-3">
-      <div>
-        <p>{gameLabel(game)}</p>
-        <p className="text-sm text-muted-foreground">
-          {formatPlayedDate(game.playedAt)} - {formatPlayedTime(game.playedAt)}
+    <div
+      className={cn(
+        'flex items-center justify-between gap-3 py-2.5',
+        divider && 'border-b border-border/60',
+      )}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold">{gameLabel(game)}</p>
+        <p className="text-xs text-muted-foreground">
+          {formatPlayedDate(game.playedAt)} · {formatPlayedTime(game.playedAt)}
         </p>
       </div>
-      <Badge variant={won ? 'success' : 'destructive'}>
-        {won ? 'W' : 'L'} {gameScore(game)}
-      </Badge>
-    </div>
-  );
-}
-
-function InsightPanel({ children, title }: { children: ReactNode; title: string }) {
-  return (
-    <Panel>
-      <h2 className="text-2xl font-semibold tracking-normal">{title}</h2>
-      {children}
-    </Panel>
-  );
-}
-
-function SummaryRow({ detail, label, value }: { detail: string; label: string; value: string }) {
-  return (
-    <div className="flex min-h-14 items-center justify-between gap-3 rounded-md bg-background px-3">
-      <div className="min-w-0 flex-1">
-        <p className="truncate">{label}</p>
-        <p className="text-sm text-muted-foreground">{detail}</p>
+      <div
+        className={cn(
+          'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold tabular-nums',
+          won ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive',
+        )}
+      >
+        {won ? 'W' : 'L'} · {gameScore(game)}
       </div>
-      <p className="shrink-0 text-right text-sm font-semibold">{value}</p>
     </div>
   );
 }
 
 function PageHeader({ description, title }: { description: string; title: string }) {
   return (
-    <div className="space-y-2">
-      <h1 className="text-5xl font-bold tracking-normal">{title}</h1>
-      <p className="text-muted-foreground">{description}</p>
+    <div className="space-y-1">
+      <h1 className="text-3xl font-extrabold tracking-tight">{title}</h1>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -963,8 +1481,8 @@ function NavButton({ active, icon, label, onClick }: { active: boolean; icon: Re
   return (
     <button
       className={cn(
-        'flex min-h-14 flex-col items-center justify-center gap-1 rounded-md px-2 text-xs font-semibold text-muted-foreground transition-colors',
-        active && 'bg-muted text-foreground',
+        'flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground',
+        active && 'bg-primary/10 text-primary hover:text-primary',
       )}
       onClick={onClick}
       type="button"
@@ -1018,10 +1536,6 @@ function EmptyCard({ text }: { text: string }) {
       <p className="text-sm text-muted-foreground">{text}</p>
     </Panel>
   );
-}
-
-function EmptyText({ children }: { children: ReactNode }) {
-  return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
 function formatPlayedDate(playedAt: number) {

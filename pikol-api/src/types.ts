@@ -49,3 +49,8 @@ export type RecordGameBody = {
   durationSeconds: number;
   scoringEvents: ScoringEvent[];
 };
+
+export type AssignCourtsBody = {
+  playerIds: number[];
+  courts: number;
+};

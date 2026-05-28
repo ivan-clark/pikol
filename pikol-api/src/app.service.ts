@@ -1,10 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { applyMatchResult, getWinner, pickMatch, STARTING_MMR } from './game.logic';
+import { applyMatchResult, assignCourts, getWinner, pickMatch, STARTING_MMR } from './game.logic';
 import { bestPairings, buildInsights } from './insights.logic';
 import { PrismaService } from './prisma.service';
-import type { GameHistoryItem, Match, Player, PlayerSnapshot, RecordGameBody, Score, ScoringEvent, TeamName } from './types';
+import type {
+  GameHistoryItem,
+  Match,
+  Player,
+  PlayerSnapshot,
+  RecordGameBody,
+  Score,
+  ScoringEvent,
+  TeamName,
+} from './types';
 
 const CURRENT_MATCH_ID = 1;
 
@@ -117,6 +126,28 @@ export class AppService {
     });
 
     return match;
+  }
+
+  // Open play: balance up to `courtCount` courts from an ordered queue of player ids
+  // (front of the list has waited longest). Stateless — the live session is managed
+  // by the client; recording a finished court goes through recordGame as usual.
+  async assignOpenPlayCourts(playerIds: number[], courtCount: number) {
+    if (!Array.isArray(playerIds)) {
+      throw new BadRequestException('playerIds must be an array.');
+    }
+
+    const courts = Math.floor(courtCount);
+    if (!Number.isFinite(courts) || courts < 1 || courts > 8) {
+      throw new BadRequestException('courts must be between 1 and 8.');
+    }
+
+    const [players, history] = await Promise.all([this.getPlayers(), this.getHistory()]);
+    const playerById = new Map(players.map((player) => [player.id, player]));
+    const orderedPlayers = playerIds
+      .map((id) => playerById.get(id))
+      .filter((player): player is Player => Boolean(player));
+
+    return assignCourts(orderedPlayers, history, courts);
   }
 
   async getCurrentMatch() {

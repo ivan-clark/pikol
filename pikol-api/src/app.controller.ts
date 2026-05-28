@@ -4,6 +4,8 @@ import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AppService } from './app.service';
 import {
   AddPlayerDto,
+  AssignCourtsDto,
+  AssignCourtsResultDto,
   GameHistoryItemDto,
   HealthDto,
   MatchDto,
@@ -13,7 +15,7 @@ import {
   ResetTestingDataDto,
   UpdatePlayerAvailabilityDto,
 } from './dto';
-import type { RecordGameBody } from './types';
+import type { AssignCourtsBody, RecordGameBody } from './types';
 
 @ApiTags('Pikol')
 @Controller()
@@ -65,6 +67,14 @@ export class AppController {
   @ApiOkResponse({ type: MatchDto })
   pickMatch() {
     return this.appService.pickMatch();
+  }
+
+  @Post('open-play/assign')
+  @ApiOperation({ summary: 'Balance open-play courts from an ordered player queue' })
+  @ApiBody({ type: AssignCourtsDto })
+  @ApiOkResponse({ type: AssignCourtsResultDto })
+  assignOpenPlayCourts(@Body() body: AssignCourtsBody) {
+    return this.appService.assignOpenPlayCourts(body.playerIds, body.courts);
   }
 
   @Get('matches/current')
