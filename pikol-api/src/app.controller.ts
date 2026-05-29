@@ -74,7 +74,12 @@ export class AppController {
   @ApiBody({ type: AssignCourtsDto })
   @ApiOkResponse({ type: AssignCourtsResultDto })
   assignOpenPlayCourts(@Body() body: AssignCourtsBody) {
-    return this.appService.assignOpenPlayCourts(body.playerIds, body.courts);
+    return this.appService.assignOpenPlayCourts(
+      body.playerIds,
+      body.courts,
+      body.sessionPairCounts,
+      body.sessionGamesPlayed,
+    );
   }
 
   @Get('matches/current')

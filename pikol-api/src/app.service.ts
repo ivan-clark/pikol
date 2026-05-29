@@ -10,7 +10,6 @@ import type {
   Player,
   PlayerSnapshot,
   RecordGameBody,
-  Score,
   ScoringEvent,
   TeamName,
 } from './types';
@@ -131,7 +130,14 @@ export class AppService {
   // Open play: balance up to `courtCount` courts from an ordered queue of player ids
   // (front of the list has waited longest). Stateless — the live session is managed
   // by the client; recording a finished court goes through recordGame as usual.
-  async assignOpenPlayCourts(playerIds: number[], courtCount: number) {
+  // `sessionPairCounts` lets the client steer the assigner away from partnerships
+  // that have already happened in the current session.
+  async assignOpenPlayCourts(
+    playerIds: number[],
+    courtCount: number,
+    sessionPairCounts?: Record<string, number>,
+    sessionGamesPlayed?: Record<number, number>,
+  ) {
     if (!Array.isArray(playerIds)) {
       throw new BadRequestException('playerIds must be an array.');
     }
@@ -147,7 +153,7 @@ export class AppService {
       .map((id) => playerById.get(id))
       .filter((player): player is Player => Boolean(player));
 
-    return assignCourts(orderedPlayers, history, courts);
+    return assignCourts(orderedPlayers, history, courts, sessionPairCounts, sessionGamesPlayed);
   }
 
   async getCurrentMatch() {

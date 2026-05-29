@@ -8,6 +8,7 @@ import {
   Flame,
   History,
   Hourglass,
+  LayoutDashboard,
   LayoutGrid,
   Moon,
   Rewind,
@@ -20,16 +21,15 @@ import {
 } from 'lucide-react';
 
 import { Avatar } from './components/Avatar';
+import { DashboardPage } from './components/DashboardPage';
 import { OpenPlayPage } from './components/OpenPlayPage';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
+import { Card } from './components/ui/card';
 import { Input } from './components/ui/input';
 import { api } from './lib/api';
 import {
   formatDuration,
-  getMatchPoint,
-  getWinner,
   winRate,
 } from './lib/game';
 import {
@@ -45,47 +45,29 @@ import {
   underdogMargin,
 } from './lib/insights';
 import { cn } from './lib/utils';
-import type { GameHistoryItem, Match, Player, Score, ScoringEvent, TeamName } from './lib/types';
+import type { GameHistoryItem, Player } from './lib/types';
 
-type Page = 'game' | 'openplay' | 'players' | 'history' | 'insights';
+type Page = 'dashboard' | 'openplay' | 'players' | 'history' | 'insights';
 type HistoryView = 'games' | 'pairs' | 'players';
-type DialogState = 'record' | 'discard' | null;
-type PendingAction = 'add-player' | 'reset' | 'pick-teams' | 'record-match' | `availability-${number}` | null;
-
-const emptyScore: Score = { teamA: 0, teamB: 0 };
+type PendingAction = 'add-player' | 'reset' | `availability-${number}` | null;
 
 export default function App() {
-  const [page, setPage] = useState<Page>('game');
+  const [page, setPage] = useState<Page>('dashboard');
   const [players, setPlayers] = useState<Player[]>([]);
   const [history, setHistory] = useState<GameHistoryItem[]>([]);
-  const [match, setMatch] = useState<Match | null>(null);
-  const [score, setScore] = useState<Score>(emptyScore);
-  const [events, setEvents] = useState<ScoringEvent[]>([]);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [hasStarted, setHasStarted] = useState(false);
-  const [isRandomizing, setIsRandomizing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [apiError, setApiError] = useState('');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [playerNameError, setPlayerNameError] = useState('');
-  const [dialog, setDialog] = useState<DialogState>(null);
   const [historyView, setHistoryView] = useState<HistoryView>('games');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light',
   );
 
-  const winner = getWinner(score);
-  const matchPoint = getMatchPoint(score);
-  const timerRunning = startedAt !== null;
-  const canCreateMatch = players.length >= 4;
   const isAddingPlayer = pendingAction === 'add-player';
   const isResetting = pendingAction === 'reset';
-  const isPickingTeams = pendingAction === 'pick-teams';
-  const isRecordingMatch = pendingAction === 'record-match';
-  const availablePlayerCount = players.filter((player) => player.available).length;
 
   useEffect(() => {
     void loadInitialData();
@@ -103,20 +85,6 @@ export default function App() {
     }
   }, [theme]);
 
-  useEffect(() => {
-    if (!startedAt) return;
-
-    const intervalId = window.setInterval(() => {
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    }, 1000);
-
-    return () => window.clearInterval(intervalId);
-  }, [startedAt]);
-
-  useEffect(() => {
-    if (winner) setStartedAt(null);
-  }, [winner]);
-
   const rankedPlayers = useMemo(
     () =>
       [...players].sort((a, b) => {
@@ -133,107 +101,23 @@ export default function App() {
       }),
     [players],
   );
-  const pairStats = useMemo(() => bestPairings(history), [history]);
-  const streaks = useMemo(() => longestWinStreaks(history), [history]);
-  const selectedPlayerGames = useMemo(() => {
-    if (!selectedPlayerId) return [];
-    return [...history]
-      .reverse()
-      .filter((game) => [...game.teamA, ...game.teamB].some((player) => player.id === selectedPlayerId));
-  }, [history, selectedPlayerId]);
-
   async function loadInitialData() {
     setIsLoading(true);
     setApiError('');
 
     try {
-      const [loadedPlayers, loadedHistory, loadedMatch] = await Promise.all([
+      const [loadedPlayers, loadedHistory] = await Promise.all([
         api.getPlayers(),
         api.getHistory(),
-        api.getCurrentMatch(),
       ]);
 
       setPlayers(loadedPlayers);
       setHistory(loadedHistory);
-      setMatch(loadedMatch);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : 'Unable to connect to the API.');
     } finally {
       setIsLoading(false);
     }
-  }
-
-  function resetCurrentGame() {
-    setScore(emptyScore);
-    setEvents([]);
-    setElapsedSeconds(0);
-    setStartedAt(null);
-    setHasStarted(false);
-  }
-
-  async function pickTeams() {
-    if (availablePlayerCount < 4 || isRandomizing || isPickingTeams) return;
-
-    setMatch(null);
-    resetCurrentGame();
-    setIsRandomizing(true);
-    setPendingAction('pick-teams');
-
-    try {
-      await wait(550);
-      setMatch(await api.pickMatch());
-      setApiError('');
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : 'Unable to pick teams.');
-    } finally {
-      setIsRandomizing(false);
-      setPendingAction(null);
-    }
-  }
-
-  function toggleTimer() {
-    if (!match || winner) return;
-
-    if (timerRunning) {
-      setStartedAt(null);
-      return;
-    }
-
-    setHasStarted(true);
-    setStartedAt(Date.now() - elapsedSeconds * 1000);
-  }
-
-  function addPoint(team: TeamName) {
-    if (!match || !hasStarted || winner) return;
-
-    const nextScore = {
-      teamA: score.teamA + (team === 'Team A' ? 1 : 0),
-      teamB: score.teamB + (team === 'Team B' ? 1 : 0),
-    };
-
-    setScore(nextScore);
-    setEvents((currentEvents) => [...currentEvents, { team, score: nextScore, elapsedSeconds }]);
-    if (getWinner(nextScore)) setStartedAt(null);
-  }
-
-  function subtractPoint(team: TeamName) {
-    if (!match || !hasStarted) return;
-    const canSubtract = team === 'Team A' ? score.teamA > 0 : score.teamB > 0;
-    if (!canSubtract) return;
-
-    const hadWinner = Boolean(winner);
-    const nextScore = {
-      teamA: Math.max(0, score.teamA - (team === 'Team A' ? 1 : 0)),
-      teamB: Math.max(0, score.teamB - (team === 'Team B' ? 1 : 0)),
-    };
-
-    setScore(nextScore);
-    setEvents((currentEvents) => {
-      const indexToRemove = [...currentEvents].map((event) => event.team).lastIndexOf(team);
-      return indexToRemove < 0 ? currentEvents : currentEvents.filter((_, index) => index !== indexToRemove);
-    });
-
-    if (hadWinner && !getWinner(nextScore)) setStartedAt(Date.now() - elapsedSeconds * 1000);
   }
 
   async function addPlayer() {
@@ -269,8 +153,6 @@ export default function App() {
       const resetData = await api.reset();
       setPlayers(resetData.players);
       setHistory(resetData.history);
-      setMatch(resetData.currentMatch);
-      resetCurrentGame();
       setSelectedPlayerId(null);
       setApiError('');
     } catch (error) {
@@ -293,38 +175,6 @@ export default function App() {
     } finally {
       setPendingAction(null);
     }
-  }
-
-  async function recordMatch() {
-    if (!match || !winner) return;
-
-    try {
-      setPendingAction('record-match');
-      const result = await api.recordGame({
-        match,
-        score,
-        winner,
-        durationSeconds: elapsedSeconds,
-        scoringEvents: events,
-      });
-
-      setPlayers(result.players);
-      setHistory((currentHistory) => [result.game, ...currentHistory]);
-      setDialog(null);
-      setMatch(null);
-      resetCurrentGame();
-      setApiError('');
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : 'Unable to record match.');
-      setDialog(null);
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
-  function discardMatch() {
-    setDialog(null);
-    resetCurrentGame();
   }
 
   function handleOpenPlayResult(updatedPlayers: Player[], game: GameHistoryItem) {
@@ -372,25 +222,11 @@ export default function App() {
             <p className="text-sm text-muted-foreground">Loading data from API...</p>
           </Card>
         )}
-        {page === 'game' && (
-          <GamePage
-            canCreateMatch={canCreateMatch}
-            availablePlayerCount={availablePlayerCount}
-            elapsedSeconds={elapsedSeconds}
-            events={events}
-            hasStarted={hasStarted}
-            isRandomizing={isRandomizing}
-            isPickingTeams={isPickingTeams}
-            match={match}
-            matchPoint={matchPoint}
-            onAddPoint={addPoint}
-            onOpenDialog={setDialog}
-            onPickTeams={() => void pickTeams()}
-            onSubtractPoint={subtractPoint}
-            onToggleTimer={toggleTimer}
-            score={score}
-            timerRunning={timerRunning}
-            winner={winner}
+        {page === 'dashboard' && (
+          <DashboardPage
+            players={players}
+            history={history}
+            onGoToOpenPlay={() => setPage('openplay')}
           />
         )}
         {page === 'openplay' && <OpenPlayPage players={players} onResult={handleOpenPlayResult} />}
@@ -414,18 +250,16 @@ export default function App() {
             historyView={historyView}
             onSelectPlayer={setSelectedPlayerId}
             onViewChange={setHistoryView}
-            pairStats={pairStats}
             players={rankedPlayers}
-            selectedPlayerGames={selectedPlayerGames}
             selectedPlayerId={selectedPlayerId}
           />
         )}
-        {page === 'insights' && <InsightsPage history={history} pairStats={pairStats} players={rankedPlayers} streaks={streaks} />}
+        {page === 'insights' && <InsightsPage history={history} players={rankedPlayers} />}
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 border-t border-border bg-card/95 backdrop-blur">
         <div className="mx-auto grid max-w-2xl grid-cols-5 gap-1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          <NavButton active={page === 'game'} icon={<Trophy size={20} />} label="Game" onClick={() => setPage('game')} />
+          <NavButton active={page === 'dashboard'} icon={<LayoutDashboard size={20} />} label="Dashboard" onClick={() => setPage('dashboard')} />
           <NavButton active={page === 'openplay'} icon={<LayoutGrid size={20} />} label="Open Play" onClick={() => setPage('openplay')} />
           <NavButton active={page === 'players'} icon={<Users size={20} />} label="Players" onClick={() => setPage('players')} />
           <NavButton active={page === 'history'} icon={<History size={20} />} label="History" onClick={() => setPage('history')} />
@@ -433,201 +267,6 @@ export default function App() {
         </div>
       </nav>
 
-      {dialog === 'record' && (
-        <ConfirmDialog
-          actionLabel="Record"
-          description="This will add one game to all four players, add one win to the winning team, update MMR, and save this game to History."
-          isLoading={isRecordingMatch}
-          onCancel={() => setDialog(null)}
-          onConfirm={() => void recordMatch()}
-          title="Record this match?"
-          variant="success"
-        />
-      )}
-      {dialog === 'discard' && (
-        <ConfirmDialog
-          actionLabel="Do Not Record"
-          description="This will reset the score and timer without adding games, wins, or history. The same teams stay on screen."
-          onCancel={() => setDialog(null)}
-          onConfirm={discardMatch}
-          title="Do not record this match?"
-          variant="destructive"
-        />
-      )}
-    </div>
-  );
-}
-
-function GamePage({
-  availablePlayerCount,
-  canCreateMatch,
-  elapsedSeconds,
-  events,
-  hasStarted,
-  isRandomizing,
-  isPickingTeams,
-  match,
-  matchPoint,
-  onAddPoint,
-  onOpenDialog,
-  onPickTeams,
-  onSubtractPoint,
-  onToggleTimer,
-  score,
-  timerRunning,
-  winner,
-}: {
-  availablePlayerCount: number;
-  canCreateMatch: boolean;
-  elapsedSeconds: number;
-  events: ScoringEvent[];
-  hasStarted: boolean;
-  isRandomizing: boolean;
-  isPickingTeams: boolean;
-  match: Match | null;
-  matchPoint: TeamName | 'Deuce' | null;
-  onAddPoint: (team: TeamName) => void;
-  onOpenDialog: (dialog: DialogState) => void;
-  onPickTeams: () => void;
-  onSubtractPoint: (team: TeamName) => void;
-  onToggleTimer: () => void;
-  score: Score;
-  timerRunning: boolean;
-  winner: TeamName | null;
-}) {
-  return (
-    <>
-      <PageHeader title="Game" description="Pick balanced 2v2 teams, run the timer, score to 11, and record the result." />
-
-      <Panel>
-        <div>
-          <h2 className="text-2xl font-semibold tracking-normal">Next match</h2>
-          <p className="text-sm text-muted-foreground">Rotates teammate pairs first, then balances teams by MMR.</p>
-        </div>
-
-        {match ? (
-          <div className={cn('grid gap-2 md:grid-cols-2', isRandomizing && 'animate-pulse opacity-60')}>
-            <MatchTeamCard
-              name="Team A"
-              onAdd={() => onAddPoint('Team A')}
-              onSubtract={() => onSubtractPoint('Team A')}
-              players={match.teamA}
-              score={score.teamA}
-              showScore={hasStarted}
-              winner={winner}
-            />
-            <MatchTeamCard
-              name="Team B"
-              onAdd={() => onAddPoint('Team B')}
-              onSubtract={() => onSubtractPoint('Team B')}
-              players={match.teamB}
-              score={score.teamB}
-              showScore={hasStarted}
-              winner={winner}
-            />
-          </div>
-        ) : isRandomizing ? (
-          <div className="animate-pulse rounded-md bg-muted p-4">
-            <p className="text-xl font-semibold">Picking teams...</p>
-            <p className="text-sm text-muted-foreground">Balancing players with fewer recorded games first.</p>
-          </div>
-        ) : availablePlayerCount >= 4 ? (
-          <p className="text-sm text-muted-foreground">Tap Pick Teams when you are ready to generate a 2v2 match.</p>
-        ) : canCreateMatch ? (
-          <p className="text-sm text-muted-foreground">Mark at least four players available to generate a 2v2 match.</p>
-        ) : (
-          <p className="text-sm text-muted-foreground">Add four players to generate the first 2v2 match.</p>
-        )}
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <StatusBox label="Timer" value={formatDuration(elapsedSeconds)} />
-          {winner && <StatusBox label="Winner" value={winner} valueClassName="text-success" />}
-          {!winner && matchPoint && (
-            <StatusBox
-              label={matchPoint === 'Deuce' ? 'Status' : 'Match point'}
-              value={matchPoint}
-              valueClassName="text-warning"
-            />
-          )}
-
-          <div className="ml-auto flex flex-wrap justify-end gap-2">
-            {!match && (
-              <Button disabled={availablePlayerCount < 4 || isRandomizing || isPickingTeams} onClick={onPickTeams}>
-                {isPickingTeams || isRandomizing ? 'Picking...' : 'Pick Teams'}
-              </Button>
-            )}
-            {match && !hasStarted && (
-              <Button disabled={availablePlayerCount < 4 || isRandomizing || isPickingTeams} onClick={onPickTeams}>
-                {isPickingTeams || isRandomizing ? 'Picking...' : 'Repick Teams'}
-              </Button>
-            )}
-            {winner ? (
-              <Button disabled={isRandomizing} onClick={() => onOpenDialog('discard')} variant="destructive">
-                Do Not Record
-              </Button>
-            ) : (
-              <Button disabled={!match || isRandomizing} onClick={onToggleTimer} variant={timerRunning ? 'secondary' : 'warning'}>
-                {timerRunning ? 'Stop Time' : 'Start Time'}
-              </Button>
-            )}
-            {winner && (
-              <Button disabled={isRandomizing} onClick={() => onOpenDialog('record')} variant="secondary">
-                Record
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {match && <p className="text-xs text-muted-foreground">{events.length} scoring events recorded for this game.</p>}
-      </Panel>
-    </>
-  );
-}
-
-function MatchTeamCard({
-  name,
-  onAdd,
-  onSubtract,
-  players,
-  score,
-  showScore,
-  winner,
-}: {
-  name: TeamName;
-  onAdd: () => void;
-  onSubtract: () => void;
-  players: Player[];
-  score: number;
-  showScore: boolean;
-  winner: TeamName | null;
-}) {
-  return (
-    <div className={cn('space-y-3 rounded-md bg-background p-4', winner === name && 'ring-2 ring-success')}>
-      <p className="text-sm text-muted-foreground">{name}</p>
-      {players.map((player) => (
-        <div key={player.id}>
-          <p className="text-xl font-semibold">{player.name}</p>
-          <p className="text-sm text-muted-foreground">
-            {player.mmr} MMR - {player.games} games
-          </p>
-        </div>
-      ))}
-
-      {showScore ? (
-        <div className="flex items-center justify-between gap-2 pt-2">
-          <div className="w-24 shrink-0 text-6xl font-black leading-none">{score}</div>
-          <div className="flex shrink-0 flex-wrap justify-end gap-1">
-            <Button disabled={score === 0} onClick={onSubtract} variant="destructive">
-              -1
-            </Button>
-            <Button disabled={Boolean(winner)} onClick={onAdd} variant="success">
-              +1
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">Start time to score.</p>
-      )}
     </div>
   );
 }
@@ -731,28 +370,112 @@ function PlayersPage({
   );
 }
 
+// ── History date filter helpers ────────────────────────────────────────────
+
+type HistoryDatePreset = 'all' | 'today' | 'yesterday' | '7d' | '30d';
+
+const HISTORY_DATE_PRESETS: { value: HistoryDatePreset; label: string; phrase: string }[] = [
+  { value: 'all', label: 'All', phrase: 'all time' },
+  { value: 'today', label: 'Today', phrase: 'today' },
+  { value: 'yesterday', label: 'Yesterday', phrase: 'yesterday' },
+  { value: '7d', label: '7d', phrase: 'the last 7 days' },
+  { value: '30d', label: '30d', phrase: 'the last 30 days' },
+];
+
+function historyRangeFromPreset(preset: HistoryDatePreset): { from: number | null; to: number | null } {
+  const day = 24 * 60 * 60 * 1000;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTodayMs = startOfToday.getTime();
+
+  switch (preset) {
+    case 'all':
+      return { from: null, to: null };
+    case 'today':
+      return { from: startOfTodayMs, to: null };
+    case 'yesterday':
+      return { from: startOfTodayMs - day, to: startOfTodayMs };
+    case '7d':
+      return { from: Date.now() - 7 * day, to: null };
+    case '30d':
+      return { from: Date.now() - 30 * day, to: null };
+  }
+}
+
 function HistoryPage({
   history,
   historyView,
   onSelectPlayer,
   onViewChange,
-  pairStats,
   players,
-  selectedPlayerGames,
   selectedPlayerId,
 }: {
   history: GameHistoryItem[];
   historyView: HistoryView;
   onSelectPlayer: (id: number) => void;
   onViewChange: (view: HistoryView) => void;
-  pairStats: ReturnType<typeof bestPairings>;
   players: Player[];
-  selectedPlayerGames: GameHistoryItem[];
   selectedPlayerId: number | null;
 }) {
+  const [dateFilter, setDateFilter] = useState<HistoryDatePreset>('all');
+
+  // Filter once, then derive everything from filteredHistory.
+  const filteredHistory = useMemo(() => {
+    const range = historyRangeFromPreset(dateFilter);
+    if (range.from == null && range.to == null) return history;
+    return history.filter((game) => {
+      if (range.from != null && game.playedAt < range.from) return false;
+      if (range.to != null && game.playedAt >= range.to) return false;
+      return true;
+    });
+  }, [history, dateFilter]);
+
+  const pairStats = useMemo(() => bestPairings(filteredHistory), [filteredHistory]);
+
+  const selectedPlayerGames = useMemo(() => {
+    if (!selectedPlayerId) return [];
+    return [...filteredHistory]
+      .reverse()
+      .filter((game) => [...game.teamA, ...game.teamB].some((player) => player.id === selectedPlayerId));
+  }, [filteredHistory, selectedPlayerId]);
+
+  // Preserve each game's original chronological number across the full history,
+  // so filtering doesn't make "Game #N" relabel to a smaller index.
+  const gameNumberById = useMemo(() => {
+    const map = new Map<number, number>();
+    history.forEach((game, index) => map.set(game.id, history.length - index));
+    return map;
+  }, [history]);
+
+  const activePreset = HISTORY_DATE_PRESETS.find((preset) => preset.value === dateFilter);
+  const isFiltered = dateFilter !== 'all';
   return (
     <>
       <PageHeader title="History" description="Review games, player records, and pair performance." />
+
+      {/* Date filter — drives the Games list, Pairs leaderboard, and Players timeline */}
+      <div className="grid grid-cols-5 gap-1 rounded-lg border border-border bg-muted p-1">
+        {HISTORY_DATE_PRESETS.map((preset) => (
+          <button
+            key={preset.value}
+            type="button"
+            onClick={() => setDateFilter(preset.value)}
+            className={cn(
+              'min-h-9 rounded-md text-xs font-semibold text-muted-foreground transition-colors',
+              dateFilter === preset.value && 'bg-card text-foreground shadow-sm',
+            )}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
+      {isFiltered && activePreset && (
+        <p className="-mt-1 text-sm text-muted-foreground">
+          Showing {filteredHistory.length} {filteredHistory.length === 1 ? 'game' : 'games'} from{' '}
+          {activePreset.phrase}.
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-muted p-1">
         {(['games', 'pairs', 'players'] as const).map((view) => (
@@ -771,10 +494,18 @@ function HistoryPage({
       </div>
 
       {historyView === 'games' &&
-        (history.length > 0 ? (
-          history.map((game, index) => <GameHistoryCard game={game} index={history.length - index} key={game.id} />)
+        (filteredHistory.length > 0 ? (
+          filteredHistory.map((game) => (
+            <GameHistoryCard game={game} index={gameNumberById.get(game.id) ?? 0} key={game.id} />
+          ))
         ) : (
-          <EmptyCard text="Recorded games will appear here after you finish a match on the Game tab." />
+          <EmptyCard
+            text={
+              isFiltered
+                ? `No games recorded ${activePreset?.phrase ?? 'in this range'}.`
+                : 'Recorded games will appear here after you finish a match on the Game tab.'
+            }
+          />
         ))}
 
       {historyView === 'pairs' &&
@@ -827,7 +558,13 @@ function HistoryPage({
             </div>
           </Panel>
         ) : (
-          <EmptyCard text="Pair history appears after games are recorded." />
+          <EmptyCard
+            text={
+              isFiltered
+                ? `No pair stats ${activePreset?.phrase ?? 'in this range'} yet.`
+                : 'Pair history appears after games are recorded.'
+            }
+          />
         ))}
 
       {historyView === 'players' &&
@@ -876,36 +613,140 @@ function HistoryPage({
   );
 }
 
+// ── Insights filter helpers ─────────────────────────────────────────────────
+
+type DatePreset = 'all' | '7d' | '30d' | '90d' | 'year';
+
+const DATE_PRESETS: { value: DatePreset; label: string; short: string }[] = [
+  { value: 'all', label: 'All time', short: 'All' },
+  { value: '7d', label: 'Last 7 days', short: '7d' },
+  { value: '30d', label: 'Last 30 days', short: '30d' },
+  { value: '90d', label: 'Last 90 days', short: '90d' },
+  { value: 'year', label: 'This year', short: 'Year' },
+];
+
+function rangeFromPreset(preset: DatePreset): { from: number | null } {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  switch (preset) {
+    case 'all':
+      return { from: null };
+    case '7d':
+      return { from: now - 7 * day };
+    case '30d':
+      return { from: now - 30 * day };
+    case '90d':
+      return { from: now - 90 * day };
+    case 'year':
+      return { from: new Date(new Date().getFullYear(), 0, 1).getTime() };
+  }
+}
+
+// Rebuild per-player stats from a (possibly filtered) history. MMR is taken from
+// the most recent snapshot in the filtered window, so the leaderboard reflects
+// "rating as of the end of this range" rather than career MMR.
+function rollupPlayersFromHistory(history: GameHistoryItem[]): Player[] {
+  const rolled = new Map<number, { games: number; wins: number; mmr: number; name: string }>();
+  const chronological = [...history].sort((a, b) => a.playedAt - b.playedAt);
+  for (const game of chronological) {
+    const winnerIds = new Set(
+      (game.winner === 'Team A' ? game.teamA : game.teamB).map((player) => player.id),
+    );
+    for (const snapshot of [...game.teamA, ...game.teamB]) {
+      const entry = rolled.get(snapshot.id) ?? {
+        games: 0,
+        wins: 0,
+        mmr: snapshot.mmr,
+        name: snapshot.name,
+      };
+      entry.games += 1;
+      if (winnerIds.has(snapshot.id)) entry.wins += 1;
+      entry.mmr = snapshot.mmr; // latest snapshot in this window
+      entry.name = snapshot.name;
+      rolled.set(snapshot.id, entry);
+    }
+  }
+  return [...rolled.entries()]
+    .map(([id, entry]) => ({
+      id,
+      name: entry.name,
+      games: entry.games,
+      wins: entry.wins,
+      mmr: entry.mmr,
+      available: true,
+    }))
+    .sort(
+      (a, b) => b.mmr - a.mmr || b.wins - a.wins || a.name.localeCompare(b.name),
+    );
+}
+
 function InsightsPage({
   history,
-  pairStats,
-  players,
-  streaks,
+  players: rosterPlayers,
 }: {
   history: GameHistoryItem[];
-  pairStats: ReturnType<typeof bestPairings>;
   players: Player[];
-  streaks: ReturnType<typeof longestWinStreaks>;
 }) {
-  const activePlayers = players.filter((player) => player.games > 0);
+  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [playerFilter, setPlayerFilter] = useState<number | null>(null);
+
+  const range = useMemo(() => rangeFromPreset(datePreset), [datePreset]);
+
+  const filteredHistory = useMemo(
+    () =>
+      history.filter((game) => {
+        if (range.from != null && game.playedAt < range.from) return false;
+        if (playerFilter != null) {
+          const inGame = [...game.teamA, ...game.teamB].some(
+            (player) => player.id === playerFilter,
+          );
+          if (!inGame) return false;
+        }
+        return true;
+      }),
+    [history, range, playerFilter],
+  );
+
+  const filteredPlayers = useMemo(
+    () => rollupPlayersFromHistory(filteredHistory),
+    [filteredHistory],
+  );
+  const filteredPairStats = useMemo(
+    () => bestPairings(filteredHistory),
+    [filteredHistory],
+  );
+  const filteredStreaks = useMemo(
+    () => longestWinStreaks(filteredHistory),
+    [filteredHistory],
+  );
+
+  const isFiltered = datePreset !== 'all' || playerFilter !== null;
+  const activePreset = DATE_PRESETS.find((preset) => preset.value === datePreset);
+  const filterPlayerName =
+    playerFilter != null
+      ? rosterPlayers.find((player) => player.id === playerFilter)?.name ?? null
+      : null;
 
   // ── Top-of-page stat tiles
-  const totalGames = history.length;
-  const activeCount = activePlayers.length;
-  const totalSeconds = history.reduce((sum, game) => sum + game.durationSeconds, 0);
+  const totalGames = filteredHistory.length;
+  const activeCount = filteredPlayers.length;
+  const totalSeconds = filteredHistory.reduce(
+    (sum, game) => sum + game.durationSeconds,
+    0,
+  );
   const avgSeconds = totalGames > 0 ? Math.round(totalSeconds / totalGames) : 0;
 
-  // ── Leaderboards (parent already passes players sorted by MMR desc)
-  const topMmr = activePlayers.slice(0, 5);
-  const winRateLeaders = [...activePlayers]
+  // ── Leaderboards
+  const topMmr = filteredPlayers.slice(0, 5);
+  const winRateLeaders = [...filteredPlayers]
     .filter((player) => player.games >= 3)
     .sort(
       (a, b) =>
         winRate(b.wins, b.games) - winRate(a.wins, a.games) || b.wins - a.wins || b.games - a.games,
     )
     .slice(0, 5);
-  const mostActive = [...activePlayers].sort((a, b) => b.games - a.games).slice(0, 5);
-  const topPairs = pairStats.slice(0, 5);
+  const mostActive = [...filteredPlayers].sort((a, b) => b.games - a.games).slice(0, 5);
+  const topPairs = filteredPairStats.slice(0, 5);
 
   // ── Bar scaling: keep bars visible across narrow ranges by lifting the floor.
   const mmrMin = topMmr.length ? Math.min(...topMmr.map((p) => p.mmr)) : 0;
@@ -913,19 +754,105 @@ function InsightsPage({
   const mmrRange = mmrMax - mmrMin || 1;
   const scaleMmr = (mmr: number) => 30 + 70 * ((mmr - mmrMin) / mmrRange);
   const topActiveGames = mostActive[0]?.games ?? 1;
-  const topStreak = streaks[0]?.wins ?? 1;
+  const topStreak = filteredStreaks[0]?.wins ?? 1;
 
   // ── Game highlights
-  const closest = closestGame(history);
-  const longest = longestGame(history);
-  const comeback = bestComeback(history);
-  const lead = biggestLead(history);
-  const upset = biggestUpset(history);
+  const closest = closestGame(filteredHistory);
+  const longest = longestGame(filteredHistory);
+  const comeback = bestComeback(filteredHistory);
+  const lead = biggestLead(filteredHistory);
+  const upset = biggestUpset(filteredHistory);
   const upsetMmrDiff = upset ? Math.round(underdogMargin(upset)) : 0;
 
   return (
     <>
       <PageHeader title="Insights" description="Leaderboards, analytics, and standout moments from your games." />
+
+      {/* Filter bar */}
+      <Card className="flex flex-col gap-3 p-4">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Filters
+          </h2>
+          {isFiltered && (
+            <button
+              type="button"
+              onClick={() => {
+                setDatePreset('all');
+                setPlayerFilter(null);
+              }}
+              className="text-xs font-semibold text-primary hover:underline"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Date range
+          </p>
+          <div className="grid grid-cols-5 gap-1 rounded-lg border border-border bg-muted p-1">
+            {DATE_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => setDatePreset(preset.value)}
+                className={cn(
+                  'min-h-9 rounded-md text-xs font-semibold text-muted-foreground transition-colors',
+                  datePreset === preset.value && 'bg-card text-foreground shadow-sm',
+                )}
+              >
+                {preset.short}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Player
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setPlayerFilter(null)}
+              className={cn(
+                'flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium transition-colors',
+                playerFilter === null
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-card hover:bg-muted',
+              )}
+            >
+              All players
+            </button>
+            {rosterPlayers.map((player) => (
+              <button
+                key={player.id}
+                type="button"
+                onClick={() => setPlayerFilter(player.id)}
+                className={cn(
+                  'flex items-center gap-2 rounded-full border pl-1 pr-3 py-1 text-sm font-medium transition-colors',
+                  playerFilter === player.id
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-card hover:bg-muted',
+                )}
+              >
+                <Avatar name={player.name} size={24} />
+                <span>{player.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isFiltered && (
+          <p className="text-sm text-muted-foreground">
+            Showing {totalGames} {totalGames === 1 ? 'game' : 'games'}
+            {activePreset && activePreset.value !== 'all' && <> in {activePreset.label.toLowerCase()}</>}
+            {filterPlayerName && <> involving {filterPlayerName}</>}.
+          </p>
+        )}
+      </Card>
 
       {/* Hero stat strip */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -954,7 +881,9 @@ function InsightsPage({
               />
             ))
           ) : (
-            <EmptyRow>Record games to see MMR rankings.</EmptyRow>
+            <EmptyRow>
+              {isFiltered ? 'No games in this range yet.' : 'Record games to see MMR rankings.'}
+            </EmptyRow>
           )}
         </LeaderPanel>
 
@@ -1022,8 +951,8 @@ function InsightsPage({
 
       {/* Win streaks — own full-width panel for emphasis */}
       <LeaderPanel title="Longest Win Streaks" subtitle="Consecutive wins" icon={<Zap size={14} />}>
-        {streaks.length > 0 ? (
-          streaks.slice(0, 5).map((streak, index) => (
+        {filteredStreaks.length > 0 ? (
+          filteredStreaks.slice(0, 5).map((streak, index) => (
             <LeaderRow
               key={streak.id}
               rank={index + 1}
@@ -1468,15 +1397,6 @@ function Panel({ children, className }: { children: ReactNode; className?: strin
   return <Card className={cn('flex flex-col gap-3 p-4', className)}>{children}</Card>;
 }
 
-function StatusBox({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
-  return (
-    <div className="space-y-0.5">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className={cn('text-2xl font-semibold leading-none', valueClassName)}>{value}</p>
-    </div>
-  );
-}
-
 function NavButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
   return (
     <button
@@ -1490,43 +1410,6 @@ function NavButton({ active, icon, label, onClick }: { active: boolean; icon: Re
       {icon}
       {label}
     </button>
-  );
-}
-
-function ConfirmDialog({
-  actionLabel,
-  description,
-  isLoading = false,
-  onCancel,
-  onConfirm,
-  title,
-  variant,
-}: {
-  actionLabel: string;
-  description: string;
-  isLoading?: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-  title: string;
-  variant: 'success' | 'destructive';
-}) {
-  return (
-    <div className="fixed inset-0 z-20 grid place-items-center bg-foreground/55 p-4">
-      <Card className="w-full max-w-md p-4">
-        <CardHeader className="p-0">
-          <CardTitle className="text-2xl">{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-end gap-2 p-0 pt-4">
-          <Button disabled={isLoading} onClick={onCancel} variant="outline">
-            Cancel
-          </Button>
-          <Button disabled={isLoading} onClick={onConfirm} variant={variant}>
-            {isLoading ? 'Recording...' : actionLabel}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
   );
 }
 
@@ -1553,6 +1436,3 @@ function formatPlayedTime(playedAt: number) {
   });
 }
 
-function wait(milliseconds: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
-}

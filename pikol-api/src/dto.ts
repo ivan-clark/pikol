@@ -119,6 +119,22 @@ export class AssignCourtsDto {
 
   @ApiProperty({ example: 2 })
   courts!: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Map of "smallerId-largerId" → partnership count this session. The assigner prefers pairs with the lowest count, so all partnerships rotate before any repeats.',
+    example: { '1-2': 1, '3-4': 1 },
+  })
+  sessionPairCounts?: Record<string, number>;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Map of playerId → games played in the current session. When provided, the assigner enforces fair games-played (fewest plays next) and only diversifies pairings within ties.',
+    example: { '1': 2, '2': 2, '3': 1 },
+  })
+  sessionGamesPlayed?: Record<number, number>;
 }
 
 export class AssignCourtsResultDto {
